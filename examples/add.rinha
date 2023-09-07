@@ -1,0 +1,9 @@
+let add = fn (a, b, k) => {
+  if (a == 0) {
+    k + b
+  } else {
+    add(a - 1, b, 1 + k)
+  }
+};
+
+print (add(50, 50, 0))
