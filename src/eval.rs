@@ -1,5 +1,6 @@
+use std::collections::HashMap;
+
 use crate::term::*;
-use rinha::ast::BinaryOp;
 
 // A rust macro that matches on the result of an expression and returns the respective variant
 macro_rules! match_term {
@@ -29,45 +30,78 @@ pub enum EvalError {
   InvalidEquality,
   InvalidAddition(Term, Term),
 }
-type Scope = Vec<(String, Term)>;
 
-pub fn eval(scope: &Scope, term: Term) -> Result<Term, EvalError> {
+fn eval_function_call(
+  scope: HashMap<String, Term>,
+  memo: &mut HashMap<(String, Vec<Term>), Term>,
+  Call { callee, arguments, .. }: Call,
+) -> Result<Term, EvalError> {
+  let f = match_term!(eval_to_tail(&mut scope.clone(), memo, *callee)?, Term::Function, Type::Function);
+  let mut scope = scope.clone();
+  let eval_arguments = arguments
+    .into_iter()
+    .map(|arg| eval_to_tail(&mut scope.clone(), memo, arg))
+    .collect::<Result<Vec<_>, _>>()?;
+  let memoized_value = f.name.clone().and_then(|name| memo.get(&(name, eval_arguments.clone()))).cloned();
+  match memoized_value {
+    Some(val) => Ok(val),
+    None => {
+      scope.extend(f.parameters.into_iter().zip(eval_arguments.clone()));
+      let return_val = eval_to_tail(&mut scope, memo, *f.value)?;
+      if let Some(name) = f.name {
+        memo.insert((name, eval_arguments), return_val.clone());
+      }
+      Ok(return_val)
+    }
+  }
+}
+
+fn eval_to_tail<'a>(
+  scope: &'a mut HashMap<String, Term>,
+  memo: &'a mut HashMap<(String, Vec<Term>), Term>,
+  term: Term,
+) -> Result<Term, EvalError> {
   match term {
-    Term::Call(Call { callee, arguments }) => {
-      let f = match_term!(eval(scope, *callee)?, Term::Function, Type::Function);
-      let mut scope = scope.clone();
-      let eval_arguments =
-        arguments.into_iter().map(|arg| eval(&scope, arg)).collect::<Result<Vec<_>, _>>()?;
-      scope.extend(f.parameters.into_iter().zip(eval_arguments));
-      eval(&scope, *f.value)
+    Term::Call(call) => {
+      if call.is_tail_call {
+        let Call { callee, arguments, is_tail_call } = call;
+        let eval_arguments = arguments
+          .into_iter()
+          .map(|arg| eval_to_tail(&mut scope.clone(), memo, arg))
+          .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Term::Call(Call { callee, arguments: eval_arguments, is_tail_call }))
+      } else {
+        eval_function_call(scope.clone(), memo, call)
+      }
     }
     Term::Binary(Binary(lhs, op, rhs)) => {
       use BinaryOp::*;
       match op {
-        Add => match (eval(scope, *lhs)?, eval(scope, *rhs)?) {
+        Add => match (eval_to_tail(&mut scope.clone(), memo, *lhs)?, eval_to_tail(scope, memo, *rhs)?) {
           (Term::Int(a), Term::Int(b)) => Ok(Term::Int(a + b)),
           (Term::Str(a), Term::Str(b)) => Ok(Term::Str(a + &b)),
           (Term::Str(a), Term::Int(b)) => Ok(Term::Str(a + &b.to_string())),
           (Term::Int(a), Term::Str(b)) => Ok(Term::Str(a.to_string() + &b)),
           (a, b) => Err(EvalError::InvalidAddition(a, b)),
         },
-        Sub => match_term!(eval(scope, *lhs)?, Term::Int, Type::Int)
-          .checked_sub(match_term!(eval(scope, *rhs)?, Term::Int, Type::Int))
+        Sub => match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
+          .checked_sub(match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Int, Type::Int))
           .map(Term::Int)
           .ok_or(EvalError::Overflow),
-        Mul => match_term!(eval(scope, *lhs)?, Term::Int, Type::Int)
-          .checked_mul(match_term!(eval(scope, *rhs)?, Term::Int, Type::Int))
+        Mul => match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
+          .checked_mul(match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Int, Type::Int))
           .map(Term::Int)
           .ok_or(EvalError::Overflow),
-        Div => match_term!(eval(scope, *lhs)?, Term::Int, Type::Int)
-          .checked_div(match_term!(eval(scope, *rhs)?, Term::Int, Type::Int))
+        Div => match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
+          .checked_div(match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Int, Type::Int))
           .map(Term::Int)
           .ok_or(EvalError::Overflow),
-        Rem => match_term!(eval(scope, *lhs)?, Term::Int, Type::Int)
-          .checked_rem(match_term!(eval(scope, *rhs)?, Term::Int, Type::Int))
+        Rem => match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
+          .checked_rem(match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Int, Type::Int))
           .map(Term::Int)
           .ok_or(EvalError::Overflow),
-        Eq => match (eval(scope, *lhs)?, eval(scope, *rhs)?) {
+        Eq => match (eval_to_tail(&mut scope.clone(), memo, *lhs)?, eval_to_tail(scope, memo, *rhs)?) {
           (Term::Bool(a), Term::Bool(b)) => Ok(Term::Bool(a == b)),
           (Term::Str(a), Term::Str(b)) => Ok(Term::Bool(a == b)),
           (Term::Int(a), Term::Int(b)) => Ok(Term::Bool(a == b)),
@@ -79,51 +113,50 @@ pub fn eval(scope: &Scope, term: Term) -> Result<Term, EvalError> {
           _ => Err(EvalError::InvalidEquality),
         },
         Neq => Ok(Term::Bool(!match_term!(
-          eval(scope, Term::Binary(Binary(lhs, BinaryOp::Eq, rhs)))?,
+          eval_to_tail(scope, memo, Term::Binary(Binary(lhs, BinaryOp::Eq, rhs)))?,
           Term::Bool,
           Type::Bool
         ))),
-        Lt => match_term!(eval(scope, *lhs)?, Term::Int, Type::Int)
-          .checked_sub(match_term!(eval(scope, *rhs)?, Term::Int, Type::Int))
+        Lt => match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
+          .checked_sub(match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Int, Type::Int))
           .map(|v| v < 0)
           .map(Term::Bool)
           .ok_or(EvalError::Overflow),
-        Gt => match_term!(eval(scope, *lhs)?, Term::Int, Type::Int)
-          .checked_sub(match_term!(eval(scope, *rhs)?, Term::Int, Type::Int))
+        Gt => match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
+          .checked_sub(match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Int, Type::Int))
           .map(|v| v > 0)
           .map(Term::Bool)
           .ok_or(EvalError::Overflow),
-        Lte => match_term!(eval(scope, *lhs)?, Term::Int, Type::Int)
-          .checked_sub(match_term!(eval(scope, *rhs)?, Term::Int, Type::Int))
+        Lte => match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
+          .checked_sub(match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Int, Type::Int))
           .map(|v| v <= 0)
           .map(Term::Bool)
           .ok_or(EvalError::Overflow),
-        Gte => match_term!(eval(scope, *lhs)?, Term::Int, Type::Int)
-          .checked_sub(match_term!(eval(scope, *rhs)?, Term::Int, Type::Int))
+        Gte => match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
+          .checked_sub(match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Int, Type::Int))
           .map(|v| v >= 0)
           .map(Term::Bool)
           .ok_or(EvalError::Overflow),
         And => Ok(Term::Bool(
-          match_term!(eval(scope, *lhs)?, Term::Bool, Type::Bool)
-            && match_term!(eval(scope, *rhs)?, Term::Bool, Type::Bool),
+          match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Bool, Type::Bool)
+            && match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Bool, Type::Bool),
         )),
         Or => Ok(Term::Bool(
-          match_term!(eval(scope, *lhs)?, Term::Bool, Type::Bool)
-            || match_term!(eval(scope, *rhs)?, Term::Bool, Type::Bool),
+          match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Bool, Type::Bool)
+            || match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Bool, Type::Bool),
         )),
       }
     }
     Term::Let(Let { name, value, next, .. }) => {
-      let mut scope = scope.clone();
-      scope.push((name, eval(&scope, *value)?));
-      eval(&scope, *next)
+      scope.insert(name, eval_to_tail(&mut scope.clone(), memo, *value)?);
+      eval_to_tail(scope, memo, *next)
     }
     Term::If(If { condition, then, otherwise, .. }) => {
-      let bool = match_term!(eval(scope, *condition)?, Term::Bool, Type::Bool);
-      if bool { eval(scope, *then) } else { eval(scope, *otherwise) }
+      let bool = match_term!(eval_to_tail(&mut scope.clone(), memo, *condition)?, Term::Bool, Type::Bool);
+      if bool { eval_to_tail(scope, memo, *then) } else { eval_to_tail(scope, memo, *otherwise) }
     }
     Term::Print(value) => {
-      let evaluated = eval(scope, *value);
+      let evaluated = eval_to_tail(scope, memo, *value);
       match &evaluated {
         Ok(term) => println!("{}", term),
         Err(e) => println!("{:?}", e),
@@ -131,22 +164,33 @@ pub fn eval(scope: &Scope, term: Term) -> Result<Term, EvalError> {
       evaluated
     }
     Term::First(value) => {
-      let Tuple(fst, _) = match_term!(eval(scope, *value)?, Term::Tuple, Type::Tuple);
+      let Tuple(fst, _) = match_term!(eval_to_tail(scope, memo, *value)?, Term::Tuple, Type::Tuple);
       Ok(*fst)
     }
     Term::Second(value) => {
-      let Tuple(_, snd) = match_term!(eval(scope, *value)?, Term::Tuple, Type::Tuple);
+      let Tuple(_, snd) = match_term!(eval_to_tail(scope, memo, *value)?, Term::Tuple, Type::Tuple);
       Ok(*snd)
     }
-    Term::Var(var) => scope
-      .iter()
-      .rev()
-      .find(|(name, _)| name == &var)
-      .map(|(_, term)| term.clone())
-      .ok_or(EvalError::VarNotFound(var)),
-    Term::Tuple(Tuple(first, second)) => {
-      Ok(Term::Tuple(Tuple(eval(scope, *first)?.into(), eval(scope, *second)?.into())))
-    }
+    Term::Var(var) => scope.get(&var).cloned().ok_or(EvalError::VarNotFound(var)),
+    Term::Tuple(Tuple(first, second)) => Ok(Term::Tuple(Tuple(
+      eval_to_tail(&mut scope.clone(), memo, *first)?.into(),
+      eval_to_tail(scope, memo, *second)?.into(),
+    ))),
     Term::Bool(_) | Term::Int(_) | Term::Str(_) | Term::Function(_) => Ok(term),
   }
+}
+
+pub fn eval<'a>(
+  scope: &'a mut HashMap<String, Term>,
+  memo: &'a mut HashMap<(String, Vec<Term>), Term>,
+  term: Term,
+) -> Result<Term, EvalError> {
+  let mut term = eval_to_tail(scope, memo, term)?;
+
+  while let Term::Call(call) = term {
+    debug_assert!(call.is_tail_call);
+    term = eval_function_call(scope.clone(), memo, call)?;
+  }
+
+  Ok(term)
 }
