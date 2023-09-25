@@ -77,30 +77,30 @@ fn eval_to_tail<'a>(
     Term::Binary(Binary(lhs, op, rhs)) => {
       use BinaryOp::*;
       match op {
-        Add => match (eval_to_tail(&mut scope.clone(), memo, *lhs)?, eval_to_tail(scope, memo, *rhs)?) {
+        Add => match (eval(&mut scope.clone(), memo, *lhs)?, eval(scope, memo, *rhs)?) {
           (Term::Int(a), Term::Int(b)) => Ok(Term::Int(a + b)),
           (Term::Str(a), Term::Str(b)) => Ok(Term::Str(a + &b)),
           (Term::Str(a), Term::Int(b)) => Ok(Term::Str(a + &b.to_string())),
           (Term::Int(a), Term::Str(b)) => Ok(Term::Str(a.to_string() + &b)),
           (a, b) => Err(EvalError::InvalidAddition(a, b)),
         },
-        Sub => match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
-          .checked_sub(match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Int, Type::Int))
+        Sub => match_term!(eval(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
+          .checked_sub(match_term!(eval(scope, memo, *rhs)?, Term::Int, Type::Int))
           .map(Term::Int)
           .ok_or(EvalError::Overflow),
-        Mul => match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
-          .checked_mul(match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Int, Type::Int))
+        Mul => match_term!(eval(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
+          .checked_mul(match_term!(eval(scope, memo, *rhs)?, Term::Int, Type::Int))
           .map(Term::Int)
           .ok_or(EvalError::Overflow),
-        Div => match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
-          .checked_div(match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Int, Type::Int))
+        Div => match_term!(eval(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
+          .checked_div(match_term!(eval(scope, memo, *rhs)?, Term::Int, Type::Int))
           .map(Term::Int)
           .ok_or(EvalError::Overflow),
-        Rem => match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
-          .checked_rem(match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Int, Type::Int))
+        Rem => match_term!(eval(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
+          .checked_rem(match_term!(eval(scope, memo, *rhs)?, Term::Int, Type::Int))
           .map(Term::Int)
           .ok_or(EvalError::Overflow),
-        Eq => match (eval_to_tail(&mut scope.clone(), memo, *lhs)?, eval_to_tail(scope, memo, *rhs)?) {
+        Eq => match (eval(&mut scope.clone(), memo, *lhs)?, eval(scope, memo, *rhs)?) {
           (Term::Bool(a), Term::Bool(b)) => Ok(Term::Bool(a == b)),
           (Term::Str(a), Term::Str(b)) => Ok(Term::Bool(a == b)),
           (Term::Int(a), Term::Int(b)) => Ok(Term::Bool(a == b)),
@@ -112,37 +112,37 @@ fn eval_to_tail<'a>(
           _ => Err(EvalError::InvalidEquality),
         },
         Neq => Ok(Term::Bool(!match_term!(
-          eval_to_tail(scope, memo, Term::Binary(Binary(lhs, BinaryOp::Eq, rhs)))?,
+          eval(scope, memo, Term::Binary(Binary(lhs, BinaryOp::Eq, rhs)))?,
           Term::Bool,
           Type::Bool
         ))),
-        Lt => match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
-          .checked_sub(match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Int, Type::Int))
+        Lt => match_term!(eval(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
+          .checked_sub(match_term!(eval(scope, memo, *rhs)?, Term::Int, Type::Int))
           .map(|v| v < 0)
           .map(Term::Bool)
           .ok_or(EvalError::Overflow),
-        Gt => match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
-          .checked_sub(match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Int, Type::Int))
+        Gt => match_term!(eval(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
+          .checked_sub(match_term!(eval(scope, memo, *rhs)?, Term::Int, Type::Int))
           .map(|v| v > 0)
           .map(Term::Bool)
           .ok_or(EvalError::Overflow),
-        Lte => match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
-          .checked_sub(match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Int, Type::Int))
+        Lte => match_term!(eval(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
+          .checked_sub(match_term!(eval(scope, memo, *rhs)?, Term::Int, Type::Int))
           .map(|v| v <= 0)
           .map(Term::Bool)
           .ok_or(EvalError::Overflow),
-        Gte => match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
-          .checked_sub(match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Int, Type::Int))
+        Gte => match_term!(eval(&mut scope.clone(), memo, *lhs)?, Term::Int, Type::Int)
+          .checked_sub(match_term!(eval(scope, memo, *rhs)?, Term::Int, Type::Int))
           .map(|v| v >= 0)
           .map(Term::Bool)
           .ok_or(EvalError::Overflow),
         And => Ok(Term::Bool(
-          match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Bool, Type::Bool)
-            && match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Bool, Type::Bool),
+          match_term!(eval(&mut scope.clone(), memo, *lhs)?, Term::Bool, Type::Bool)
+            && match_term!(eval(scope, memo, *rhs)?, Term::Bool, Type::Bool),
         )),
         Or => Ok(Term::Bool(
-          match_term!(eval_to_tail(&mut scope.clone(), memo, *lhs)?, Term::Bool, Type::Bool)
-            || match_term!(eval_to_tail(scope, memo, *rhs)?, Term::Bool, Type::Bool),
+          match_term!(eval(&mut scope.clone(), memo, *lhs)?, Term::Bool, Type::Bool)
+            || match_term!(eval(scope, memo, *rhs)?, Term::Bool, Type::Bool),
         )),
       }
     }
@@ -151,7 +151,7 @@ fn eval_to_tail<'a>(
       eval_to_tail(scope, memo, *next)
     }
     Term::If(If { condition, then, otherwise, .. }) => {
-      let bool = match_term!(eval_to_tail(&mut scope.clone(), memo, *condition)?, Term::Bool, Type::Bool);
+      let bool = match_term!(eval(&mut scope.clone(), memo, *condition)?, Term::Bool, Type::Bool);
       if bool { eval_to_tail(scope, memo, *then) } else { eval_to_tail(scope, memo, *otherwise) }
     }
     Term::Print(value) => {
@@ -163,17 +163,17 @@ fn eval_to_tail<'a>(
       evaluated
     }
     Term::First(value) => {
-      let Tuple(fst, _) = match_term!(eval_to_tail(scope, memo, *value)?, Term::Tuple, Type::Tuple);
+      let Tuple(fst, _) = match_term!(eval(scope, memo, *value)?, Term::Tuple, Type::Tuple);
       Ok(*fst)
     }
     Term::Second(value) => {
-      let Tuple(_, snd) = match_term!(eval_to_tail(scope, memo, *value)?, Term::Tuple, Type::Tuple);
+      let Tuple(_, snd) = match_term!(eval(scope, memo, *value)?, Term::Tuple, Type::Tuple);
       Ok(*snd)
     }
     Term::Var(var) => scope.get(&var).cloned().ok_or(EvalError::VarNotFound(var)),
     Term::Tuple(Tuple(first, second)) => Ok(Term::Tuple(Tuple(
-      eval_to_tail(&mut scope.clone(), memo, *first)?.into(),
-      eval_to_tail(scope, memo, *second)?.into(),
+      eval(&mut scope.clone(), memo, *first)?.into(),
+      eval(scope, memo, *second)?.into(),
     ))),
     Term::Bool(_) | Term::Int(_) | Term::Str(_) | Term::Function(_) => Ok(term),
   }

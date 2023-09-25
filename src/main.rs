@@ -11,10 +11,7 @@ fn main() -> Result<(), String> {
     let file = std::fs::read_to_string(filepath.clone()).map_err(|e| e.to_string())?;
     let parsed = rinha::parser::parse_or_report(filepath.as_str(), &file).map_err(|e| e.to_string())?;
 
-    match eval::eval(&mut HashMap::default(), &mut HashMap::default(), parsed.expression.into()) {
-      Ok(_term) => {}
-      Err(e) => println!("{:#?}", e),
-    };
+    let _ = eval::eval(&mut HashMap::default(), &mut HashMap::default(), parsed.expression.into());
     Ok(())
   }
 

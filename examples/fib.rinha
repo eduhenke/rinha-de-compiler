@@ -13,4 +13,4 @@ let fact = fn (n) => {
     n * fact(n - 1)
   }
 };
-print(fact(100))
+print(fact(12))
