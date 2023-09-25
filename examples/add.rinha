@@ -1,9 +1,9 @@
-let add = fn (a, b, k) => {
+let add = fn (a, b) => {
   if (a == 0) {
-    k + b
+    b
   } else {
-    add(a - 1, b, 1 + k)
+    add(a - 1, b + 1)
   }
 };
 
-print (add(50, 50, 0))
+print (add(300000, 50))

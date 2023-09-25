@@ -18,7 +18,6 @@ pub enum Type {
   Tuple,
   Bool,
   Int,
-  String,
   Function,
 }
 
@@ -156,7 +155,7 @@ fn eval_to_tail<'a>(
       if bool { eval_to_tail(scope, memo, *then) } else { eval_to_tail(scope, memo, *otherwise) }
     }
     Term::Print(value) => {
-      let evaluated = eval_to_tail(scope, memo, *value);
+      let evaluated = eval(scope, memo, *value);
       match &evaluated {
         Ok(term) => println!("{}", term),
         Err(e) => println!("{:?}", e),
