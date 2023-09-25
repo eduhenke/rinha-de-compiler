@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use im::HashMap;
 
 use crate::term::*;
 
@@ -66,7 +66,7 @@ fn eval_to_tail<'a>(
         let Call { callee, arguments, is_tail_call } = call;
         let eval_arguments = arguments
           .into_iter()
-          .map(|arg| eval_to_tail(&mut scope.clone(), memo, arg))
+          .map(|arg| eval(&mut scope.clone(), memo, arg))
           .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Term::Call(Call { callee, arguments: eval_arguments, is_tail_call }))
@@ -78,7 +78,7 @@ fn eval_to_tail<'a>(
       use BinaryOp::*;
       match op {
         Add => match (eval(&mut scope.clone(), memo, *lhs)?, eval(scope, memo, *rhs)?) {
-          (Term::Int(a), Term::Int(b)) => Ok(Term::Int(a + b)),
+          (Term::Int(a), Term::Int(b)) => Ok(Term::Int(a.checked_add(b).ok_or(EvalError::Overflow)?)),
           (Term::Str(a), Term::Str(b)) => Ok(Term::Str(a + &b)),
           (Term::Str(a), Term::Int(b)) => Ok(Term::Str(a + &b.to_string())),
           (Term::Int(a), Term::Str(b)) => Ok(Term::Str(a.to_string() + &b)),
@@ -147,7 +147,7 @@ fn eval_to_tail<'a>(
       }
     }
     Term::Let(Let { name, value, next, .. }) => {
-      scope.insert(name, eval_to_tail(&mut scope.clone(), memo, *value)?);
+      scope.insert(name, eval(&mut scope.clone(), memo, *value)?);
       eval_to_tail(scope, memo, *next)
     }
     Term::If(If { condition, then, otherwise, .. }) => {

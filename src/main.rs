@@ -1,4 +1,5 @@
-use std::{collections::HashMap, thread};
+use im::HashMap;
+use std::thread;
 
 mod eval;
 mod term;
